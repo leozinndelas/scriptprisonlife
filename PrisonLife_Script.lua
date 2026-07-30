@@ -173,17 +173,19 @@ local function CreateShadow(parent, transparency, size)
 end
 
 local function GetCharacter()
-    return Player.Character or Player.CharacterAdded:Wait()
+    return Player.Character
 end
 
 local function GetHumanoid()
     local char = GetCharacter()
-    return char and char:FindFirstChildOfClass("Humanoid")
+    if not char then return nil end
+    return char:FindFirstChildOfClass("Humanoid")
 end
 
 local function GetHRP()
     local char = GetCharacter()
-    return char and char:FindFirstChild("HumanoidRootPart")
+    if not char then return nil end
+    return char:FindFirstChild("HumanoidRootPart")
 end
 
 local function Notify(title, text, duration, notifType)
@@ -247,30 +249,11 @@ Tween(MainFrame, {
     BackgroundTransparency = 0
 }, 0.6, Enum.EasingStyle.Back)
 
--- ── DRAG FUNCTIONALITY ──
+-- ── DRAG FUNCTIONALITY (somente no TitleBar) ──
 local Dragging, DragStart, StartPos
-MainFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        Dragging = true
-        DragStart = input.Position
-        StartPos = MainFrame.Position
 
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                Dragging = false
-            end
-        end)
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if Dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - DragStart
-        Tween(MainFrame, {
-            Position = UDim2.new(StartPos.X.Scale, StartPos.X.Offset + delta.X, StartPos.Y.Scale, StartPos.Y.Offset + delta.Y)
-        }, 0.08, Enum.EasingStyle.Sine)
-    end
-end)
+-- Drag apenas pela barra de título, não pelo frame todo
+-- (será conectado ao TitleBar depois de criá-lo)
 
 -- ═══════════════════════════════════════════════════════
 -- HEADER / TITLE BAR
@@ -394,6 +377,28 @@ for _, btn in ipairs({MinimizeBtn, CloseBtn}) do
         Tween(btn, {BackgroundTransparency = 0.8}, 0.2)
     end)
 end
+
+-- ── DRAG conectado ao TitleBar ──
+TitleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        Dragging = true
+        DragStart = input.Position
+        StartPos = MainFrame.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                Dragging = false
+            end
+        end)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if Dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - DragStart
+        MainFrame.Position = UDim2.new(StartPos.X.Scale, StartPos.X.Offset + delta.X, StartPos.Y.Scale, StartPos.Y.Offset + delta.Y)
+    end
+end)
 
 -- ═══════════════════════════════════════════════════════
 -- SIDEBAR (TABS)
@@ -1535,21 +1540,7 @@ end
 -- GAME LOOPS (RunService)
 -- ═══════════════════════════════════════════════════════
 
--- ── NOCLIP LOOP ──
-RunService.Stepped:Connect(function()
-    if Config.NoclipEnabled then
-        pcall(function()
-            local char = GetCharacter()
-            if char then
-                for _, part in ipairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = false
-                    end
-                end
-            end
-        end)
-    end
-end)
+
 
 -- ── FLY SYSTEM ──
 local flyConnection
@@ -1762,22 +1753,58 @@ local function CleanupESP()
     end
 end
 
--- ── GOD MODE LOOP ──
-RunService.Heartbeat:Connect(function()
-    if Config.GodModeEnabled then
-        pcall(function()
-            local hum = GetHumanoid()
-            if hum then
-                hum.Health = hum.MaxHealth
+-- ── LOOP PRINCIPAL UNIFICADO (otimizado) ──
+-- Um único loop ao invés de múltiplos Heartbeat connections
+local frameCount = 0
+RunService.Stepped:Connect(function()
+    frameCount = frameCount + 1
+    
+    pcall(function()
+        local char = GetCharacter()
+        if not char then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hum or not hrp then return end
+
+        -- Noclip (todo frame)
+        if Config.NoclipEnabled then
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
             end
-        end)
-    end
+        end
+
+        -- God Mode (todo frame)
+        if Config.GodModeEnabled then
+            hum.Health = hum.MaxHealth
+        end
+
+        -- Speed & Jump (a cada 5 frames para não sobrecarregar)
+        if frameCount % 5 == 0 then
+            if Config.SpeedEnabled then
+                hum.WalkSpeed = Config.SpeedValue
+            end
+            if Config.JumpEnabled then
+                hum.JumpPower = Config.JumpValue
+                hum.UseJumpPower = true
+            end
+        end
+
+        -- Anti Arrest (a cada 30 frames)
+        if Config.AntiArrestEnabled and frameCount % 30 == 0 then
+            for _, v in ipairs(char:GetDescendants()) do
+                if v:IsA("ClickDetector") then
+                    v.MaxActivationDistance = 0
+                end
+            end
+        end
+    end)
 end)
 
--- ── KILL AURA LOOP ──
-spawn(function()
-    while true do
-        task.wait(0.3)
+-- ── KILL AURA LOOP (separado, lento) ──
+task.spawn(function()
+    while task.wait(0.4) do
         if Config.KillAuraEnabled then
             pcall(function()
                 local hrp = GetHRP()
@@ -1802,10 +1829,9 @@ spawn(function()
     end
 end)
 
--- ── AUTO ARREST LOOP ──
-spawn(function()
-    while true do
-        task.wait(0.5)
+-- ── AUTO ARREST LOOP (separado, lento) ──
+task.spawn(function()
+    while task.wait(0.8) do
         if Config.AutoArrestEnabled then
             pcall(function()
                 local hrp = GetHRP()
@@ -1816,7 +1842,6 @@ spawn(function()
                         local theirHRP = player.Character:FindFirstChild("HumanoidRootPart")
                         if theirHRP and (hrp.Position - theirHRP.Position).Magnitude <= 25 then
                             pcall(function()
-                                -- Tentar usar o sistema de arrest do Prison Life
                                 local arrestEvent = ReplicatedStorage:FindFirstChild("Event")
                                 if arrestEvent then
                                     for _, v in ipairs(arrestEvent:GetChildren()) do
@@ -1836,46 +1861,13 @@ spawn(function()
     end
 end)
 
--- ── ANTI ARREST ──
-RunService.Heartbeat:Connect(function()
-    if Config.AntiArrestEnabled then
-        pcall(function()
-            local char = GetCharacter()
-            if char then
-                for _, v in ipairs(char:GetDescendants()) do
-                    if v:IsA("ClickDetector") then
-                        v.MaxActivationDistance = 0
-                    end
-                end
-            end
-        end)
-    end
-end)
-
--- ── SPEED & JUMP LOOP (manter valores após respawn) ──
-RunService.Heartbeat:Connect(function()
-    pcall(function()
-        local hum = GetHumanoid()
-        if hum then
-            if Config.SpeedEnabled then
-                hum.WalkSpeed = Config.SpeedValue
-            end
-            if Config.JumpEnabled then
-                hum.JumpPower = Config.JumpValue
-                hum.UseJumpPower = true
-            end
-        end
-    end)
-end)
-
 -- ── ESP UPDATE LOOP ──
-spawn(function()
-    while true do
-        task.wait(0.5)
+task.spawn(function()
+    while task.wait(1) do
         if Config.ESPEnabled then
-            UpdateESP()
+            pcall(UpdateESP)
         else
-            CleanupESP()
+            pcall(CleanupESP)
         end
     end
 end)
