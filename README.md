@@ -18,7 +18,7 @@
 Cole o seguinte código no seu executor:
 
 ```lua
-loadstring(game:HttpService():GetAsync("https://raw.githubusercontent.com/SEU_USUARIO/SEU_REPO/main/PrisonLife_Script.lua"))()
+loadstring(game:HttpService():GetAsync("https://raw.githubusercontent.com/leozinndelas/scriptprisonlife/refs/heads/main/PrisonLife_Script.lua"))()
 ```
 
 > **Nota:** Substitua `SEU_USUARIO` e `SEU_REPO` pelo seu nome de usuário e repositório do GitHub.
